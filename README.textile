@@ -1,0 +1,30 @@
+h1. flex_mysql_proxy
+
+A MySQL Proxy with Dynamic Redirection.
+
+It extract the _"username"_ from the first client packet.
+
+Then it asprintf("%s.sql.example.net") and connect to this backend, and thus forwards between the client and the backend.
+
+h1. Usage
+
+<pre>
+pmake re proxy_zone=%s.sql.example.net && ./flex_mysql_proxy
+</pre>
+
+It listen on the port 3307 by default.
+
+h1. Caveats
+
+I am not a magician. This could not work with _"mysql_native_password"_ authentication due to the challenge-response (there is some sort of a scramble).
+
+You have to use _*"--enable-cleartext-plugin"*_ which means that the backend is allowed to re-request the password in plain text.
+
+It works:
+* with plaintext authentication (https://github.com/folays/mysql_auth_flex)
+* could work for PAM & co
+* could work with minimal modifications where we can discard and not considering the first backend packet (no challenge to be forcibly answered)
+
+<pre>
+folays@phenix:~$ mysql -h 127.0.0.1 --port 3307--user=username --enable-cleartext-plugin --password=password
+</pre>
