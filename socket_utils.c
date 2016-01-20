@@ -98,13 +98,12 @@ int socket_util_forward(int fd_backend, int fd_client)
       int nb_mod = poll(fds, sizeof(fds)/sizeof(*fds), -1);
       //printf("flex %s %s : poll returned %d\n", __FILE__, __func__, nb_mod);
 
-      if (fds[0].revents & (POLLIN | POLLRDHUP))
+      if (nb_mod > 0)
         {
-          socket_util_splice(fds[0].fd, fds[1].fd, pfd_from_client, pipe_from_client_size);
-        }
-      if (fds[1].revents & (POLLIN | POLLRDHUP))
-        {
-          socket_util_splice(fds[1].fd, fds[0].fd, pfd_from_backend, pipe_from_backend_size);
+          if (fds[0].revents & (POLLIN | POLLRDHUP))
+            socket_util_splice(fds[0].fd, fds[1].fd, pfd_from_client, pipe_from_client_size);
+          if (fds[1].revents & (POLLIN | POLLRDHUP))
+            socket_util_splice(fds[1].fd, fds[0].fd, pfd_from_backend, pipe_from_backend_size);
         }
     }
 }

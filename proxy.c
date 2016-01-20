@@ -92,12 +92,14 @@ int do_proxy(int fd_client)
     err(1, "%s : write() to backend", __func__);
 
   socket_util_forward(fd_client, fd_backend);
+  return 0;
 }
 
 static int pkt_read(int fd, struct msg *msg)
 {
-  msg->buf_len = recv(fd, msg->buf_ptr, sizeof(msg->buf_ptr), MSG_PEEK | MSG_DONTWAIT);
-  if (msg->buf_len < 0)
+  ssize_t nb_recv;
+  nb_recv = recv(fd, msg->buf_ptr, sizeof(msg->buf_ptr), MSG_PEEK | MSG_DONTWAIT);
+  if (nb_recv < 0)
     {
       switch (errno)
 	{
@@ -112,7 +114,7 @@ static int pkt_read(int fd, struct msg *msg)
 	  goto out_destroy;
 	}
     }
-
+  msg->buf_len = nb_recv;
   struct s_client_Packet *pkt = (void *)msg->buf_ptr;
   if (msg->buf_len < sizeof(*pkt))
     goto out;
@@ -174,7 +176,7 @@ static int f_cb_client_read(int fd_client, void *udata)
   if (ret != 1)
     return ret;
 
-  if (strchr(*username, '.'))
+  if (strchr((const char *)*username, '.'))
     return -1;
 
   return 2;
