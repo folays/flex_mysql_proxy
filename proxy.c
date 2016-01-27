@@ -13,6 +13,7 @@
 
 #include "socket_utils.h"
 #include "proxy_epoll.h"
+#include "proxy_lua.h"
 #include "proxy.h"
 
 /* https://dev.mysql.com/doc/internals/en/mysql-packet.html
@@ -81,11 +82,12 @@ int do_proxy(int fd_client)
   unsigned char *username = NULL;
   do_proxy_epoll(fd_client, f_cb_client_read, &username);
 
-  char *hostname_backend;
-  if (asprintf(&hostname_backend, PROXY_ZONE, username) < 0)
-    err(1, "%s : asprintf", __func__);
+  proxy_lua_init();
+  unsigned char *backend_host = NULL;
+  unsigned char *backend_port = NULL;
+  proxy_lua_exec(username, &backend_host, &backend_port);
 
-  int fd_backend = socket_util_connect(hostname_backend, "3306");
+  int fd_backend = socket_util_connect(backend_host, backend_port);
   do_proxy_epoll(fd_backend, f_cb_backend_read, NULL);
 
   if (write(fd_backend, client_msg.buf_ptr, client_msg.buf_len) != client_msg.buf_len)
@@ -175,9 +177,6 @@ static int f_cb_client_read(int fd_client, void *udata)
   int ret = client_read_username(fd_client, username);
   if (ret != 1)
     return ret;
-
-  if (strchr((const char *)*username, '.'))
-    return -1;
 
   return 2;
 }
