@@ -42,6 +42,7 @@ struct s_client_HandshakeResponse41
 #define CLIENT_LONG_PASSWORD		(1 << 0)
 #define CLIENT_PROTOCOL_41		(1 << 9)
 #define CLIENT_SECURE_CONNECTION	(1 << 15)
+#define CLIENT_CONNECT_WITH_DB		(1 << 3)
 
 /* capabilities_extended */
 #define CLIENT_PLUGIN_AUTH		(1 << 3)
@@ -56,6 +57,12 @@ struct msg
 };
 static struct msg client_msg;
 static struct msg backend_msg;
+
+struct s_client_parsed_response
+{
+  unsigned char *username;
+  unsigned char *db;
+};
 
 int do_proxy(int fd_client)
 {
@@ -79,13 +86,13 @@ int do_proxy(int fd_client)
   if (write(fd_client, s_server_fake, sizeof(s_server_fake) - 1) != sizeof(s_server_fake) - 1)
     err(1, "%s : write() to client", __func__);
 
-  unsigned char *username = NULL;
-  do_proxy_epoll(fd_client, f_cb_client_read, &username);
+  struct s_client_parsed_response d_client = (struct s_client_parsed_response){0};
+  do_proxy_epoll(fd_client, f_cb_client_read, &d_client);
 
   proxy_lua_init();
   unsigned char *backend_host = NULL;
   unsigned char *backend_port = NULL;
-  proxy_lua_exec(username, &backend_host, &backend_port);
+  proxy_lua_exec(d_client.username, d_client.db, &backend_host, &backend_port);
 
   int fd_backend = socket_util_connect(backend_host, backend_port);
   do_proxy_epoll(fd_backend, f_cb_backend_read, NULL);
@@ -140,7 +147,7 @@ static int pkt_read(int fd, struct msg *msg)
   return -1; /* message incorrect or error */
 }
 
-static int client_read_username(int fd_client, unsigned char **ret_username)
+static int client_read_username(int fd_client, struct s_client_parsed_response *d_client)
 {
   int ret = pkt_read(fd_client, &client_msg);
   if (ret != 1)
@@ -151,6 +158,9 @@ static int client_read_username(int fd_client, unsigned char **ret_username)
     return -1;
 
   struct s_client_HandshakeResponse41 *hsr = (void *)&client_msg;
+  if (client_msg.buf_len < sizeof(*hsr))
+    return -1;
+
   if (!(hsr->payload.capabilities & CLIENT_PROTOCOL_41))
     return -1;
   if (!(hsr->payload.capabilities & CLIENT_LONG_PASSWORD))
@@ -162,19 +172,39 @@ static int client_read_username(int fd_client, unsigned char **ret_username)
     return -1;
 
   unsigned char *username = (void *)&hsr[1];
+  if (username > client_msg.buf_ptr + client_msg.buf_len - 1)
+    return -1;
   void *username_null = memchr(username, '\0', client_msg.buf_len - (username - client_msg.buf_ptr));
   if (!username_null)
     return -1;
 
-  *ret_username = username;
+  d_client->username = strdup(username);
+
+  uint8_t *password_length_ptr = username_null + 1;
+  if (password_length_ptr > client_msg.buf_ptr + client_msg.buf_len - 1)
+    return -1;
+
+  if (hsr->payload.capabilities & CLIENT_CONNECT_WITH_DB)
+    {
+      unsigned char *db = password_length_ptr + sizeof(*password_length_ptr) + *password_length_ptr;
+      if (db > client_msg.buf_ptr + client_msg.buf_len - 1)
+	return -1;
+
+      void *db_null = memchr(db, '\0', client_msg.buf_len - (db - client_msg.buf_ptr));
+      if (!db_null)
+	return -1;
+
+      d_client->db = strdup(db);
+    }
+
   return 1;
 }
 
 static int f_cb_client_read(int fd_client, void *udata)
 {
-  unsigned char **username = udata;
+  struct s_client_parsed_response *d_client = udata;
 
-  int ret = client_read_username(fd_client, username);
+  int ret = client_read_username(fd_client, d_client);
   if (ret != 1)
     return ret;
 
