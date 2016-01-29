@@ -2,15 +2,24 @@ h1. flex_mysql_proxy
 
 A MySQL Proxy with Dynamic Redirection.
 
-It extract the _"username"_ from the first client packet.
+It extract the _"username"_ and _"db"_ from the first client packet.
 
 Then it asprintf("%s.sql.example.net") and connect to this backend, and thus forwards between the client and the backend.
 
 h1. Usage
 
 <pre>
-pmake re proxy_zone=%s.sql.example.net && ./flex_mysql_proxy
+pmake re [proxy_port=3307] && ./flex_mysql_proxy
 </pre>
+
+You have to have an /etc/flex_mysql_proxy/scripts/proxy.lua:
+<pre>
+function get_backend_from_username(username, db)
+   return db..".sql.example.net", "3306"
+   end
+   </pre>
+
+This script should return the backend IP, or whatever is supported by getaddrinfo() like a hostname.
 
 It listen on the port 3307 by default.
 
